@@ -9,13 +9,21 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../models/download_task.dart';
 import '../models/media_variant.dart';
+import 'media_file_validator.dart';
+import '../../../../services/download_notification_service.dart';
 
 class DownloadManagerService extends ChangeNotifier {
   static const _boxName = 'download_tasks';
+  static const _userAgent =
+      'Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 '
+      '(KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36';
 
   final Dio _dio = Dio();
+  final DownloadNotificationService? _notifications;
   late Box<DownloadTask> _box;
   final Map<String, CancelToken> _cancelTokens = {};
+
+  DownloadManagerService([this._notifications]);
 
   Future<void> init() async {
     if (!Hive.isAdapterRegistered(2)) {
@@ -38,9 +46,23 @@ class DownloadManagerService extends ChangeNotifier {
 
   int get completedCount => completed.length;
 
+  int get failedCount => all.where((t) => t.status == DownloadStatus.failed).length;
+
+  Future<int> totalStorageBytes() async {
+    var total = 0;
+    for (final task in completed) {
+      final path = task.localPath;
+      if (path == null) continue;
+      final file = File(path);
+      if (await file.exists()) total += await file.length();
+    }
+    return total;
+  }
+
   Future<DownloadTask> enqueue({
     required String sourceUrl,
     required String title,
+    required String platform,
     required MediaVariant variant,
   }) async {
     final id = _taskId(sourceUrl, variant);
@@ -56,6 +78,7 @@ class DownloadManagerService extends ChangeNotifier {
       id: id,
       sourceUrl: sourceUrl,
       title: title,
+      platform: platform,
       variant: variant,
     );
     await _box.put(id, task);
@@ -76,10 +99,20 @@ class DownloadManagerService extends ChangeNotifier {
 
     try {
       final path = await _downloadFile(task, token);
+      final valid = await MediaFileValidator.isValid(path, task.kind);
+      if (!valid) {
+        await File(path).delete();
+        throw StateError(
+          'Downloaded file is not a valid ${task.kind.name}. '
+          'The link may require a platform-specific resolver.',
+        );
+      }
       task.localPath = path;
+      task.fileSizeBytes = await File(path).length();
       task.statusIndex = DownloadStatus.completed.index;
       task.progress = 1;
       await task.save();
+      await _notifications?.notifyComplete(title: task.title, label: task.variantLabel);
     } on DioException catch (e) {
       if (CancelToken.isCancel(e)) {
         task.statusIndex = DownloadStatus.cancelled.index;
@@ -117,6 +150,7 @@ class DownloadManagerService extends ChangeNotifier {
       task.downloadUrl,
       destPath,
       cancelToken: token,
+      options: Options(headers: _headersFor(task)),
       onReceiveProgress: (received, total) {
         task.progress = total <= 0 ? 0 : received / total;
         task.save();
@@ -125,6 +159,37 @@ class DownloadManagerService extends ChangeNotifier {
     );
 
     return destPath;
+  }
+
+  Map<String, String> _headersFor(DownloadTask task) {
+    final referer = task.refererUrl ?? task.sourceUrl;
+    final host = Uri.tryParse(referer)?.host.toLowerCase() ?? '';
+    final origin = _originForHost(host);
+
+    if (origin != null) {
+      return {
+        'User-Agent': _userAgent,
+        'Referer': referer,
+        'Origin': origin,
+      };
+    }
+    return {'User-Agent': _userAgent};
+  }
+
+  String? _originForHost(String host) {
+    if (host.contains('instagram.com')) return 'https://www.instagram.com';
+    if (host.contains('tiktok.com')) return 'https://www.tiktok.com';
+    if (host.contains('facebook.com') || host.contains('fb.')) return 'https://www.facebook.com';
+    if (host.contains('twitter.com') || host == 'x.com' || host.endsWith('.x.com')) {
+      return 'https://x.com';
+    }
+    if (host.contains('snapchat.com')) return 'https://www.snapchat.com';
+    if (host.contains('pinterest.') || host.contains('pin.it')) return 'https://www.pinterest.com';
+    if (host.contains('vimeo.com')) return 'https://vimeo.com';
+    if (host.contains('dailymotion.com') || host.contains('dai.ly')) {
+      return 'https://www.dailymotion.com';
+    }
+    return null;
   }
 
   String _extensionFor(DownloadTask task) {

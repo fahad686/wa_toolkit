@@ -38,10 +38,16 @@ class DownloadTask extends HiveObject {
   final DateTime createdAt;
 
   @HiveField(10)
-  final int? fileSizeBytes;
+  int? fileSizeBytes;
 
   @HiveField(11)
   final String downloadUrl;
+
+  @HiveField(12)
+  String? refererUrl;
+
+  @HiveField(13)
+  final String? platform;
 
   DownloadTask({
     required this.id,
@@ -56,6 +62,8 @@ class DownloadTask extends HiveObject {
     required this.createdAt,
     this.fileSizeBytes,
     required this.downloadUrl,
+    this.refererUrl,
+    this.platform,
   });
 
   MediaKind get kind => MediaKind.values[kindIndex.clamp(0, MediaKind.values.length - 1)];
@@ -69,6 +77,7 @@ class DownloadTask extends HiveObject {
     required String id,
     required String sourceUrl,
     required String title,
+    required String platform,
     required MediaVariant variant,
   }) {
     return DownloadTask(
@@ -80,6 +89,8 @@ class DownloadTask extends HiveObject {
       downloadUrl: variant.url,
       createdAt: DateTime.now(),
       fileSizeBytes: variant.approxSizeBytes,
+      refererUrl: variant.headers?['Referer'] ?? sourceUrl,
+      platform: platform,
     );
   }
 }

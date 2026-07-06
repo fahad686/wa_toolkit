@@ -17,6 +17,7 @@ import 'theme/theme_notifier.dart';
 import '../services/app_preferences_service.dart';
 import '../services/auto_save_service.dart';
 import '../services/deleted_message_alert_service.dart';
+import '../services/download_notification_service.dart';
 import '../services/global_search_service.dart';
 import '../services/usage_stats_service.dart';
 
@@ -87,11 +88,14 @@ class AppServices {
     final deletedAlerts = DeletedMessageAlertService(prefs);
     await deletedAlerts.init();
 
+    final downloadNotifications = DownloadNotificationService(prefs);
+    await downloadNotifications.init();
+
     final notificationCapture = NotificationCaptureService(messages, deletedAlerts, prefs);
     await notificationCapture.start();
 
     final linkResolver = LinkResolverService();
-    final downloadManager = DownloadManagerService();
+    final downloadManager = DownloadManagerService(downloadNotifications);
     await downloadManager.init();
 
     final shareLinks = ShareLinkService();

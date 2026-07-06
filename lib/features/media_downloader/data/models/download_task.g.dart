@@ -23,13 +23,15 @@ class DownloadTaskAdapter extends TypeAdapter<DownloadTask> {
       createdAt: fields[9] as DateTime,
       fileSizeBytes: fields[10] as int?,
       downloadUrl: fields[11] as String,
+      refererUrl: fields[12] as String?,
+      platform: fields[13] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, DownloadTask obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(14)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -53,7 +55,11 @@ class DownloadTaskAdapter extends TypeAdapter<DownloadTask> {
       ..writeByte(10)
       ..write(obj.fileSizeBytes)
       ..writeByte(11)
-      ..write(obj.downloadUrl);
+      ..write(obj.downloadUrl)
+      ..writeByte(12)
+      ..write(obj.refererUrl)
+      ..writeByte(13)
+      ..write(obj.platform);
   }
 
   @override

@@ -11,6 +11,7 @@ class MediaVariant {
   final String? container;
   final int? bitrateKbps;
   final bool requiresMerge;
+  final Map<String, String>? headers;
 
   const MediaVariant({
     required this.id,
@@ -22,6 +23,7 @@ class MediaVariant {
     this.container,
     this.bitrateKbps,
     this.requiresMerge = false,
+    this.headers,
   });
 
   int get sortOrder {

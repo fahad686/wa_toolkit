@@ -220,6 +220,39 @@ class LocalCacheService {
     return item;
   }
 
+  Future<StatusItem> importFileToVault({
+    required String sourcePath,
+    required String title,
+    required StatusMediaType mediaType,
+    String? folder,
+  }) async {
+    final source = File(sourcePath);
+    if (!await source.exists()) throw StateError('File not found on device.');
+
+    final vaultDir = await _vaultDirectory();
+    final id = 'dl_${DateTime.now().millisecondsSinceEpoch}_${sourcePath.hashCode.abs()}';
+    final ext = p.extension(sourcePath);
+    final destPath = p.join(vaultDir.path, '$id$ext');
+    await source.copy(destPath);
+
+    final now = DateTime.now();
+    final item = StatusItem(
+      id: id,
+      cachedFilePath: destPath,
+      mediaTypeIndex: mediaType.index,
+      discoveredAt: now,
+      expiresAt: now.add(const Duration(days: 36500)),
+      isVaulted: true,
+      vaultedFilePath: destPath,
+      originalFileName: p.basename(sourcePath),
+      originalSizeBytes: await source.length(),
+      sourceHint: title,
+      vaultFolder: folder?.trim().isEmpty == true ? null : folder?.trim(),
+    );
+    await putItem(item);
+    return item;
+  }
+
   Future<StatusItem> moveToVault(StatusItem item, {String? folder}) async {
     final vaultDir = await _vaultDirectory();
     final source = File(item.displayPath);
