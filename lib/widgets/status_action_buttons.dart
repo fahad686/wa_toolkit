@@ -108,6 +108,19 @@ class StatusActionButtons extends StatelessWidget {
     }
 
     list.add(_ActionDef(
+      icon: item.isFavorite ? Icons.star : Icons.star_border,
+      tooltip: item.isFavorite ? 'Remove favorite' : 'Add favorite',
+      color: item.isFavorite ? Colors.amber : null,
+      onTap: () => runner.toggleFavorite(item),
+    ));
+
+    list.add(_ActionDef(
+      icon: Icons.label_outline,
+      tooltip: 'Add to collection',
+      onTap: () => runner.addCollection(item),
+    ));
+
+    list.add(_ActionDef(
       icon: Icons.share_outlined,
       tooltip: 'Share',
       onTap: () => runner.share(item),

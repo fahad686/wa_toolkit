@@ -30,13 +30,16 @@ class StatusItemAdapter extends TypeAdapter<StatusItem> {
       sourceModifiedAt: fields[14] as DateTime?,
       deletedFromWhatsApp: fields[15] as bool? ?? false,
       thumbnailPath: fields[16] as String?,
+      isFavorite: fields[17] as bool? ?? false,
+      collectionTags: (fields[18] as List?)?.cast<String>() ?? const [],
+      vaultFolder: fields[19] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, StatusItem obj) {
     writer
-      ..writeByte(17)
+      ..writeByte(20)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -70,7 +73,13 @@ class StatusItemAdapter extends TypeAdapter<StatusItem> {
       ..writeByte(15)
       ..write(obj.deletedFromWhatsApp)
       ..writeByte(16)
-      ..write(obj.thumbnailPath);
+      ..write(obj.thumbnailPath)
+      ..writeByte(17)
+      ..write(obj.isFavorite)
+      ..writeByte(18)
+      ..write(obj.collectionTags)
+      ..writeByte(19)
+      ..write(obj.vaultFolder);
   }
 
   @override

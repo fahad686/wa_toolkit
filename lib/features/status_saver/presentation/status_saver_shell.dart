@@ -67,7 +67,7 @@ class _StatusSaverShellState extends State<StatusSaverShell> {
             repair: s.repair,
           ),
           SavedTab(cache: s.cache, gallery: s.gallery, share: s.share),
-          DownloaderTab(downloader: s.downloader),
+          const DownloaderTab(),
         ],
       ),
       bottomNavigationBar: NavigationBar(

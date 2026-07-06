@@ -5,7 +5,9 @@ import 'package:path_provider/path_provider.dart';
 import '../models/status_item.dart';
 import 'whatsapp_paths.dart';
 
-enum StatusFilter { all, images, videos, audio, saved, vaulted, missing }
+enum StatusFilter { all, images, videos, audio, saved, vaulted, missing, favorites }
+
+enum StatusDateFilter { all, today, last7Days }
 
 class LocalCacheService {
   static const _boxName = 'status_items';
@@ -76,7 +78,13 @@ class LocalCacheService {
     return _sorted(items);
   }
 
-  List<StatusItem> filter(StatusFilter f, {WhatsAppVariant? variant}) {
+  List<StatusItem> filter(
+    StatusFilter f, {
+    WhatsAppVariant? variant,
+    StatusDateFilter dateFilter = StatusDateFilter.all,
+    String? contactQuery,
+    String? collectionTag,
+  }) {
     final base = switch (f) {
       StatusFilter.all => getAllActive(variant: variant),
       StatusFilter.images =>
@@ -88,8 +96,95 @@ class LocalCacheService {
       StatusFilter.saved => getSaved(variant: variant),
       StatusFilter.vaulted => getVaulted(variant: variant),
       StatusFilter.missing => getMissing(variant: variant),
+      StatusFilter.favorites =>
+        getAllActive(variant: variant).where((i) => i.isFavorite),
     };
-    return _sorted(base);
+    return _sorted(_applyDateAndContact(base, dateFilter, contactQuery, collectionTag));
+  }
+
+  List<StatusItem> getVaultedInFolder(String? folder, {WhatsAppVariant? variant}) {
+    var items = getVaulted(variant: variant);
+    if (folder == null || folder.isEmpty) {
+      return items.where((i) => i.vaultFolder == null || i.vaultFolder!.isEmpty).toList();
+    }
+    return items.where((i) => i.vaultFolder == folder).toList();
+  }
+
+  List<String> vaultFolders() {
+    final folders = <String>{};
+    for (final item in _box.values) {
+      if (item.isVaulted && item.vaultFolder != null && item.vaultFolder!.isNotEmpty) {
+        folders.add(item.vaultFolder!);
+      }
+    }
+    return folders.toList()..sort();
+  }
+
+  List<String> contactLabels({WhatsAppVariant? variant}) {
+    final labels = <String>{};
+    for (final item in getAllActive(variant: variant)) {
+      labels.add(item.contactLabel);
+    }
+    return labels.toList()..sort();
+  }
+
+  List<String> collectionTags({WhatsAppVariant? variant}) {
+    final tags = <String>{};
+    for (final item in getAllActive(variant: variant)) {
+      tags.addAll(item.collectionTags);
+    }
+    return tags.toList()..sort();
+  }
+
+  Future<void> toggleFavorite(StatusItem item) async {
+    item.isFavorite = !item.isFavorite;
+    await item.save();
+  }
+
+  Future<void> setVaultFolder(StatusItem item, String? folder) async {
+    item.vaultFolder = folder?.trim().isEmpty == true ? null : folder?.trim();
+    await item.save();
+  }
+
+  Future<void> addCollectionTag(StatusItem item, String tag) async {
+    final t = tag.trim();
+    if (t.isEmpty || item.collectionTags.contains(t)) return;
+    item.collectionTags = [...item.collectionTags, t];
+    await item.save();
+  }
+
+  Future<void> removeCollectionTag(StatusItem item, String tag) async {
+    item.collectionTags = item.collectionTags.where((t) => t != tag).toList();
+    await item.save();
+  }
+
+  List<StatusItem> _applyDateAndContact(
+    Iterable<StatusItem> items,
+    StatusDateFilter dateFilter,
+    String? contactQuery,
+    String? collectionTag,
+  ) {
+    var result = items;
+    final now = DateTime.now();
+    result = switch (dateFilter) {
+      StatusDateFilter.all => result,
+      StatusDateFilter.today => result.where((i) {
+          final d = i.sourceModifiedAt ?? i.discoveredAt;
+          return d.year == now.year && d.month == now.month && d.day == now.day;
+        }),
+      StatusDateFilter.last7Days => result.where((i) {
+          final d = i.sourceModifiedAt ?? i.discoveredAt;
+          return now.difference(d).inDays <= 7;
+        }),
+    };
+    if (contactQuery != null && contactQuery.isNotEmpty) {
+      final q = contactQuery.toLowerCase();
+      result = result.where((i) => i.contactLabel.toLowerCase().contains(q));
+    }
+    if (collectionTag != null && collectionTag.isNotEmpty) {
+      result = result.where((i) => i.collectionTags.contains(collectionTag));
+    }
+    return result.toList();
   }
 
   Future<int> sweepExpired() async {
@@ -125,7 +220,7 @@ class LocalCacheService {
     return item;
   }
 
-  Future<StatusItem> moveToVault(StatusItem item) async {
+  Future<StatusItem> moveToVault(StatusItem item, {String? folder}) async {
     final vaultDir = await _vaultDirectory();
     final source = File(item.displayPath);
     if (!await source.exists()) throw StateError('Cannot vault — file is missing.');
@@ -143,6 +238,9 @@ class LocalCacheService {
     item.isSaved = false;
     item.savedFilePath = null;
     item.isMissing = false;
+    if (folder != null && folder.trim().isNotEmpty) {
+      item.vaultFolder = folder.trim();
+    }
     await item.save();
     return item;
   }

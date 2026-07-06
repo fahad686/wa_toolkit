@@ -32,6 +32,7 @@ class _VaultTabState extends State<VaultTab> {
   bool _checking = true;
   bool _hasPin = false;
   bool _unlocked = false;
+  String? _selectedFolder;
 
   @override
   void initState() {
@@ -46,7 +47,13 @@ class _VaultTabState extends State<VaultTab> {
     setState(() => _checking = false);
   }
 
-  void _refresh() => setState(() => _items = widget.cache.getVaulted());
+  void _refresh() {
+    if (widget.vault.isDecoySession) {
+      setState(() => _items = []);
+      return;
+    }
+    setState(() => _items = widget.cache.getVaultedInFolder(_selectedFolder));
+  }
 
   StatusActionsRunner _actionsRunner() => StatusActionsRunner(
         context: context,
@@ -62,6 +69,8 @@ class _VaultTabState extends State<VaultTab> {
       MaterialPageRoute(
         builder: (_) => StatusViewerScreen(
           item: item,
+          items: _items,
+          initialIndex: _items.indexOf(item),
           cache: widget.cache,
           gallery: widget.gallery,
           share: widget.share,
@@ -86,22 +95,27 @@ class _VaultTabState extends State<VaultTab> {
   }
 
   Future<void> _unlock() async {
-    if (await widget.vault.isBiometricEnabled() && await widget.vault.canUseBiometric()) {
+    if (!widget.vault.isDecoySession &&
+        await widget.vault.isBiometricEnabled() &&
+        await widget.vault.canUseBiometric()) {
       final bioOk = await widget.vault.unlockWithBiometric();
       if (bioOk) {
         setState(() => _unlocked = true);
+        _refresh();
         return;
       }
     }
 
     final pin = await _pinDialog(title: 'Enter vault PIN');
     if (pin == null) return;
-    final ok = await widget.vault.verifyPin(pin);
+    var ok = await widget.vault.verifyPin(pin);
+    if (!ok) ok = await widget.vault.verifyDecoyPin(pin);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Wrong PIN')));
       return;
     }
     setState(() => _unlocked = ok);
+    _refresh();
   }
 
   Future<String?> _pinDialog({required String title, bool confirm = false}) async {
@@ -194,23 +208,69 @@ class _VaultTabState extends State<VaultTab> {
       );
     }
 
-    if (_items.isEmpty) {
+    if (widget.vault.isDecoySession) {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(24),
-          child: Text(
-            'Vault is empty.\nTap the lock icon on any status to move it here.',
-            textAlign: TextAlign.center,
-          ),
+          child: Text('Vault is empty.', textAlign: TextAlign.center),
         ),
       );
     }
 
-    return StatusGrid(
-      items: _items,
-      onTap: _openViewer,
-      actionsRunner: _actionsRunner(),
-      gallery: widget.gallery,
+    final folders = widget.cache.vaultFolders();
+
+    return Column(
+      children: [
+        if (folders.isNotEmpty)
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+            child: Row(
+              children: [
+                FilterChip(
+                  label: const Text('All'),
+                  selected: _selectedFolder == null,
+                  onSelected: (_) => setState(() {
+                    _selectedFolder = null;
+                    _refresh();
+                  }),
+                ),
+                const SizedBox(width: 6),
+                ...folders.map(
+                  (f) => Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: FilterChip(
+                      label: Text(f),
+                      selected: _selectedFolder == f,
+                      onSelected: (_) => setState(() {
+                        _selectedFolder = f;
+                        _refresh();
+                      }),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: _items.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'Vault is empty.\nTap the lock icon on any status to move it here.',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                )
+              : StatusGrid(
+                  items: _items,
+                  onTap: _openViewer,
+                  actionsRunner: _actionsRunner(),
+                  gallery: widget.gallery,
+                ),
+        ),
+      ],
     );
   }
 }

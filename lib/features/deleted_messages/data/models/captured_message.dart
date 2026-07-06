@@ -48,6 +48,8 @@ class CapturedMessage extends HiveObject {
   bool get isLikelyDeleted =>
       isDeletedNotice || wasRemoved || looksDeleted(content);
 
+  bool get isGroupChat => senderName.contains(':') || senderName.contains('@');
+
   static bool looksDeleted(String text) {
     final lower = text.toLowerCase();
     return lower.contains('message was deleted') ||

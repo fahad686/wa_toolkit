@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:notification_listener_service/notification_event.dart';
 import 'package:notification_listener_service/notification_listener_service.dart';
 import '../../../../services/whatsapp_paths.dart';
+import '../../../../services/app_preferences_service.dart';
+import '../../../../services/deleted_message_alert_service.dart';
 import '../models/captured_message.dart';
 import 'message_store_service.dart';
 
@@ -14,9 +16,11 @@ class NotificationCaptureService {
   static const _whatsappPackages = {'com.whatsapp', 'com.whatsapp.w4b'};
 
   final MessageStoreService _store;
+  final DeletedMessageAlertService _alerts;
+  final AppPreferencesService _prefs;
   StreamSubscription<ServiceNotificationEvent>? _sub;
 
-  NotificationCaptureService(this._store);
+  NotificationCaptureService(this._store, this._alerts, this._prefs);
 
   Future<bool> hasPermission() async {
     if (!Platform.isAndroid) return false;
@@ -64,5 +68,9 @@ class NotificationCaptureService {
     );
 
     await _store.put(message);
+
+    if (message.isLikelyDeleted && _prefs.deletedAlertsEnabled) {
+      await _alerts.notifyDeleted(sender: sender, preview: message.content);
+    }
   }
 }

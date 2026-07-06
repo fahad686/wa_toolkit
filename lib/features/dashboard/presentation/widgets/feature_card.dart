@@ -5,6 +5,7 @@ class FeatureCard extends StatelessWidget {
   final Color color;
   final String title;
   final String subtitle;
+  final String? badge;
   final VoidCallback onTap;
 
   const FeatureCard({
@@ -13,6 +14,7 @@ class FeatureCard extends StatelessWidget {
     required this.color,
     required this.title,
     required this.subtitle,
+    this.badge,
     required this.onTap,
   });
 
@@ -38,7 +40,22 @@ class FeatureCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(title, style: Theme.of(context).textTheme.titleMedium),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(title, style: Theme.of(context).textTheme.titleMedium),
+                        ),
+                        if (badge != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: color.withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Text(badge!, style: TextStyle(fontSize: 11, color: color)),
+                          ),
+                      ],
+                    ),
                     const SizedBox(height: 4),
                     Text(
                       subtitle,

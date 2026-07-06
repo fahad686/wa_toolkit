@@ -60,6 +60,15 @@ class StatusItem extends HiveObject {
   @HiveField(16)
   String? thumbnailPath;
 
+  @HiveField(17, defaultValue: false)
+  bool isFavorite;
+
+  @HiveField(18, defaultValue: <String>[])
+  List<String> collectionTags;
+
+  @HiveField(19)
+  String? vaultFolder;
+
   StatusItem({
     required this.id,
     required this.cachedFilePath,
@@ -78,6 +87,9 @@ class StatusItem extends HiveObject {
     this.sourceModifiedAt,
     this.deletedFromWhatsApp = false,
     this.thumbnailPath,
+    this.isFavorite = false,
+    this.collectionTags = const [],
+    this.vaultFolder,
   });
 
   StatusMediaType get mediaType => StatusMediaType.values[mediaTypeIndex];

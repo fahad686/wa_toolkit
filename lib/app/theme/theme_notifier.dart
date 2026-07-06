@@ -23,13 +23,13 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  void cycle() {
+  Future<void> cycle() async {
     final next = switch (_mode) {
       ThemeMode.system => ThemeMode.light,
       ThemeMode.light => ThemeMode.dark,
       ThemeMode.dark => ThemeMode.system,
     };
-    setMode(next);
+    await setMode(next);
   }
 
   IconData get icon => switch (_mode) {

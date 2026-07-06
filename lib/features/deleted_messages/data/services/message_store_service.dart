@@ -34,8 +34,69 @@ class MessageStoreService {
     return items;
   }
 
+  List<CapturedMessage> search(String query, {WhatsAppVariant? variant}) {
+    final q = query.trim().toLowerCase();
+    if (q.isEmpty) return all(variant: variant);
+    return all(variant: variant)
+        .where((m) =>
+            m.senderName.toLowerCase().contains(q) || m.content.toLowerCase().contains(q))
+        .toList();
+  }
+
+  List<CapturedMessage> filtered({
+    WhatsAppVariant? variant,
+    bool? savedOnly,
+    bool? deletedOnly,
+    bool? groupsOnly,
+    String? query,
+  }) {
+    var items = all(variant: variant, savedOnly: savedOnly);
+    if (deletedOnly == true) {
+      items = items.where((m) => m.isLikelyDeleted).toList();
+    }
+    if (groupsOnly == true) {
+      items = items.where((m) => m.isGroupChat).toList();
+    }
+    if (query != null && query.trim().isNotEmpty) {
+      final q = query.trim().toLowerCase();
+      items = items
+          .where((m) =>
+              m.senderName.toLowerCase().contains(q) || m.content.toLowerCase().contains(q))
+          .toList();
+    }
+    return items;
+  }
+
+  Map<String, List<CapturedMessage>> groupBySender({WhatsAppVariant? variant}) {
+    final map = <String, List<CapturedMessage>>{};
+    for (final msg in all(variant: variant)) {
+      map.putIfAbsent(msg.senderName, () => []).add(msg);
+    }
+    for (final list in map.values) {
+      list.sort((a, b) => b.capturedAt.compareTo(a.capturedAt));
+    }
+    return Map.fromEntries(
+      map.entries.toList()..sort((a, b) {
+        final aTime = a.value.first.capturedAt;
+        final bTime = b.value.first.capturedAt;
+        return bTime.compareTo(aTime);
+      }),
+    );
+  }
+
   List<CapturedMessage> deletedOnly({WhatsAppVariant? variant}) {
-    return all(variant: variant).where((m) => m.isLikelyDeleted).toList();
+    return filtered(variant: variant, deletedOnly: true);
+  }
+
+  String exportText(Iterable<CapturedMessage> messages) {
+    final buffer = StringBuffer();
+    for (final m in messages) {
+      buffer.writeln('From: ${m.senderName}');
+      buffer.writeln('At: ${m.capturedAt.toIso8601String()}');
+      buffer.writeln(m.content);
+      buffer.writeln('---');
+    }
+    return buffer.toString();
   }
 
   Future<void> saveMessage(CapturedMessage message) async {

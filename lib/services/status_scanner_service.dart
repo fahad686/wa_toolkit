@@ -9,6 +9,7 @@ import 'package:saf_stream/saf_stream.dart';
 import '../models/status_item.dart';
 import '../utils/file_type_detector.dart';
 import '../utils/media_utils.dart';
+import 'auto_save_service.dart';
 import 'local_cache_service.dart';
 import 'thumbnail_service.dart';
 import 'whatsapp_paths.dart';
@@ -42,10 +43,11 @@ class StatusScannerService {
   final SafStream _safStream = SafStream();
   final LocalCacheService _cache;
   final ThumbnailService? _thumbnails;
+  final AutoSaveService? _autoSave;
 
   final Map<WhatsAppVariant, String> _folderUris = {};
 
-  StatusScannerService(this._cache, [this._thumbnails]);
+  StatusScannerService(this._cache, [this._thumbnails, this._autoSave]);
 
   Future<bool> requestFolderAccess(WhatsAppVariant variant) async {
     final folder = await _safUtil.pickDirectory(
@@ -111,6 +113,7 @@ class StatusScannerService {
     int newlyCached = 0;
     int alreadyCached = 0;
     int skipped = 0;
+    final newItems = <StatusItem>[];
 
     final liveFileNames = <String>{};
 
@@ -165,8 +168,13 @@ class StatusScannerService {
         );
 
         await _cache.putItem(item);
+        newItems.add(item);
         newlyCached++;
       }
+    }
+
+    if (_autoSave != null && newItems.isNotEmpty) {
+      await _autoSave.applyToNewItems(newItems);
     }
 
     int markedDeleted = 0;
