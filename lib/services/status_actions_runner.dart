@@ -52,7 +52,9 @@ class StatusActionsRunner {
 
   Future<void> restoreFromVault(StatusItem item) => _run(
         () => cache.restoreFromVault(item),
-        'Restored from vault',
+        item.canRestoreToOriginal
+            ? 'Restored to ${item.originalLocationPath}'
+            : 'Restored from vault',
       );
 
   Future<void> toggleFavorite(StatusItem item) async {

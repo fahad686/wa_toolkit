@@ -69,6 +69,10 @@ class StatusItem extends HiveObject {
   @HiveField(19)
   String? vaultFolder;
 
+  /// Original device path before vaulting (local imports). Used to restore on unlock.
+  @HiveField(20)
+  String? originalLocationPath;
+
   StatusItem({
     required this.id,
     required this.cachedFilePath,
@@ -90,6 +94,7 @@ class StatusItem extends HiveObject {
     this.isFavorite = false,
     this.collectionTags = const [],
     this.vaultFolder,
+    this.originalLocationPath,
   });
 
   StatusMediaType get mediaType => StatusMediaType.values[mediaTypeIndex];
@@ -106,4 +111,9 @@ class StatusItem extends HiveObject {
   bool get isProtected => isSaved || isVaulted;
 
   String get contactLabel => sourceHint ?? 'Unknown contact';
+
+  bool get isLocalImport => id.startsWith('local_');
+
+  bool get canRestoreToOriginal =>
+      isVaulted && originalLocationPath != null && originalLocationPath!.isNotEmpty;
 }

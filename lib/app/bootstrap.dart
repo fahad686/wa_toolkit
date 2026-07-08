@@ -1,6 +1,8 @@
-import 'package:hive/hive.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import '../features/deleted_messages/data/models/captured_message.dart';
 import '../features/deleted_messages/data/services/message_store_service.dart';
 import '../features/deleted_messages/data/services/notification_capture_service.dart';
+import '../features/media_downloader/data/models/download_task.dart';
 import '../features/media_downloader/data/services/download_manager_service.dart';
 import '../features/media_downloader/data/services/link_resolver_service.dart';
 import '../features/media_downloader/data/services/share_link_service.dart';
@@ -8,6 +10,7 @@ import '../services/downloader_service.dart';
 import '../services/file_repair_service.dart';
 import '../services/gallery_service.dart';
 import '../services/local_cache_service.dart';
+import '../models/status_item.dart';
 import '../services/share_service.dart';
 import '../services/status_scanner_service.dart';
 import '../services/status_watch_service.dart';
@@ -75,7 +78,21 @@ class AppServices {
 
   static late final AppServices I;
 
+  static Future<void> _initHive() async {
+    await Hive.initFlutter();
+    if (!Hive.isAdapterRegistered(0)) {
+      Hive.registerAdapter(StatusItemAdapter());
+    }
+    if (!Hive.isAdapterRegistered(1)) {
+      Hive.registerAdapter(CapturedMessageAdapter());
+    }
+    if (!Hive.isAdapterRegistered(2)) {
+      Hive.registerAdapter(DownloadTaskAdapter());
+    }
+  }
+
   static Future<AppServices> init() async {
+    await _initHive();
     final settingsBox = await Hive.openBox('settings');
     final theme = ThemeNotifier(settingsBox);
     final prefs = AppPreferencesService(settingsBox);

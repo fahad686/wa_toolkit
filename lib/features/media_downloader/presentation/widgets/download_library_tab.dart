@@ -109,13 +109,16 @@ class _DownloadLibraryTabState extends State<DownloadLibraryTab> {
 
   Future<void> _openItem(DownloadTask task) async {
     if (task.status != DownloadStatus.completed || task.localPath == null) return;
+    final library = _filterItems()
+        .where((t) => t.status == DownloadStatus.completed && t.localPath != null)
+        .toList();
     Widget screen;
     if (task.kind == MediaKind.audio) {
-      screen = DownloadedAudioPlayerScreen(task: task);
+      screen = DownloadedAudioPlayerScreen(task: task, playlist: library);
     } else if (isDownloadImage(task)) {
       screen = DownloadedImageViewerScreen(task: task);
     } else if (task.kind == MediaKind.video) {
-      screen = DownloadedMediaPlayerScreen(task: task);
+      screen = DownloadedMediaPlayerScreen(task: task, playlist: library);
     } else {
       return;
     }

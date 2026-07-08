@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:photo_view/photo_view.dart';
-import 'package:video_player/video_player.dart';
 import '../models/status_item.dart';
 import '../services/file_repair_service.dart';
 import '../services/gallery_service.dart';
@@ -10,6 +9,8 @@ import '../services/share_service.dart';
 import '../services/status_actions_runner.dart';
 import '../services/vault_service.dart';
 import '../utils/format_utils.dart';
+import '../widgets/app_audio_player.dart';
+import '../widgets/app_video_player.dart';
 import '../widgets/status_action_buttons.dart';
 
 class StatusViewerScreen extends StatefulWidget {
@@ -43,8 +44,6 @@ class StatusViewerScreen extends StatefulWidget {
 class _StatusViewerScreenState extends State<StatusViewerScreen> {
   late final PageController _pageController;
   late int _currentIndex;
-  final Map<int, VideoPlayerController?> _videoControllers = {};
-  final Map<int, bool> _videoReady = {};
 
   final Map<String, String> _mediaPaths = {};
 
@@ -67,40 +66,23 @@ class _StatusViewerScreenState extends State<StatusViewerScreen> {
     super.initState();
     _currentIndex = widget.initialIndex.clamp(0, _allItems.length - 1);
     _pageController = PageController(initialPage: _currentIndex);
-    _initVideoFor(_currentIndex);
+    _preloadMediaPaths();
   }
 
-  Future<void> _initVideoFor(int index) async {
-    final item = _allItems[index];
-    if (item.mediaType != StatusMediaType.video) return;
-    if (_videoControllers[index] != null) return;
-
-    final path = await _pathFor(item);
-    final controller = VideoPlayerController.file(File(path));
-    await controller.initialize();
-    controller.setLooping(true);
-    await controller.play();
-    if (mounted) {
-      setState(() {
-        _videoControllers[index] = controller;
-        _videoReady[index] = true;
-      });
+  Future<void> _preloadMediaPaths() async {
+    for (final item in _allItems) {
+      await _pathFor(item);
     }
+    if (mounted) setState(() {});
   }
 
   void _onPageChanged(int index) {
-    _videoControllers[_currentIndex]?.pause();
     setState(() => _currentIndex = index);
-    _initVideoFor(index);
-    _videoControllers[index]?.play();
   }
 
   @override
   void dispose() {
     _pageController.dispose();
-    for (final c in _videoControllers.values) {
-      c?.dispose();
-    }
     super.dispose();
   }
 
@@ -216,56 +198,45 @@ class _StatusViewerScreenState extends State<StatusViewerScreen> {
           minScale: PhotoViewComputedScale.contained,
           maxScale: PhotoViewComputedScale.covered * 3,
         ),
-      StatusMediaType.video => _buildVideo(item, index),
-      StatusMediaType.audio => _buildAudio(item),
+      StatusMediaType.video => AppVideoPlayer(
+          key: ValueKey(path),
+          filePath: path,
+          showSkipButtons: _allItems.length > 1,
+          onPrevious: index > 0 ? () => _pageController.previousPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              ) : null,
+          onNext: index < _allItems.length - 1 ? () => _pageController.nextPage(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOut,
+              ) : null,
+        ),
+      StatusMediaType.audio => ColoredBox(
+          color: Theme.of(context).colorScheme.surface,
+          child: AppAudioPlayer(
+            key: ValueKey(path),
+            filePath: path,
+            title: item.originalFileName ?? item.contactLabel,
+            subtitle: item.contactLabel,
+            playlistPaths: _audioPaths(),
+            initialIndex: _audioIndex(item),
+          ),
+        ),
     };
   }
 
-  Widget _buildVideo(StatusItem item, int index) {
-    final ready = _videoReady[index] == true;
-    final controller = _videoControllers[index];
-    if (!ready || controller == null) {
-      return const Center(child: CircularProgressIndicator(color: Colors.white));
-    }
-    return Center(
-      child: AspectRatio(
-        aspectRatio: controller.value.aspectRatio,
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            VideoPlayer(controller),
-            IconButton(
-              iconSize: 64,
-              color: Colors.white70,
-              onPressed: () {
-                setState(() {
-                  controller.value.isPlaying ? controller.pause() : controller.play();
-                });
-              },
-              icon: Icon(controller.value.isPlaying ? Icons.pause_circle : Icons.play_circle),
-            ),
-          ],
-        ),
-      ),
-    );
+  List<String> _audioPaths() {
+    return _allItems
+        .where((i) => i.mediaType == StatusMediaType.audio)
+        .map((i) => _mediaPaths[i.id] ?? i.displayPath)
+        .where((p) => File(p).existsSync())
+        .toList();
   }
 
-  Widget _buildAudio(StatusItem item) {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(Icons.audiotrack, size: 96, color: Colors.white70),
-          const SizedBox(height: 24),
-          Text(
-            item.originalFileName ?? 'Audio status',
-            style: const TextStyle(color: Colors.white70),
-          ),
-          const SizedBox(height: 16),
-          const Text('Open from share to play in your music app', style: TextStyle(color: Colors.white38)),
-        ],
-      ),
-    );
+  int _audioIndex(StatusItem item) {
+    final audioItems = _allItems.where((i) => i.mediaType == StatusMediaType.audio).toList();
+    final idx = audioItems.indexWhere((i) => i.id == item.id);
+    return idx < 0 ? 0 : idx;
   }
 }
 

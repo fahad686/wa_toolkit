@@ -19,6 +19,8 @@ class VaultCryptoService {
 
   bool get isUnlocked => _sessionKey != null;
 
+  static String get encryptedExtension => _encExt;
+
   static bool isEncryptedPath(String path) => path.endsWith(_encExt);
 
   Future<void> createMasterKey(String pin) async {
@@ -81,7 +83,9 @@ class VaultCryptoService {
     await File(target).writeAsBytes(out.toBytes());
 
     if (target != plainPath && plainPath != target) {
-      await source.delete();
+      try {
+        if (await source.exists()) await source.delete();
+      } catch (_) {}
     }
     return target;
   }

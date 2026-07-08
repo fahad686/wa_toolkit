@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/status_item.dart';
 import '../services/gallery_service.dart';
+import '../services/local_cache_service.dart';
 import '../services/status_actions_runner.dart';
 import 'status_tile.dart';
 
@@ -12,6 +13,7 @@ class StatusGrid extends StatelessWidget {
   final bool selectionMode;
   final Set<String> selectedIds;
   final ValueChanged<StatusItem>? onSelectionToggle;
+  final LocalCacheService? cache;
 
   const StatusGrid({
     super.key,
@@ -22,6 +24,7 @@ class StatusGrid extends StatelessWidget {
     this.selectionMode = false,
     this.selectedIds = const {},
     this.onSelectionToggle,
+    this.cache,
   });
 
   @override
@@ -55,6 +58,7 @@ class StatusGrid extends StatelessWidget {
               },
               actionsRunner: selectionMode ? null : actionsRunner,
               gallery: selectionMode ? null : gallery,
+              cache: cache,
             ),
             if (selectionMode)
               Positioned(

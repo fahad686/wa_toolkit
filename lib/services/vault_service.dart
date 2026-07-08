@@ -88,6 +88,19 @@ class VaultService extends ChangeNotifier {
     await _storage.write(key: _failedAttemptsKey, value: '0');
   }
 
+  /// First-time PIN setup: stores PIN and opens vault without forcing re-entry.
+  Future<bool> setupInitialPin(String pin) async {
+    if (pin.length < 4) throw ArgumentError('PIN must be at least 4 digits');
+    if (await hasPin()) return false;
+    await setPin(pin);
+    _unlocked = true;
+    _decoySession = false;
+    _lastActivity = DateTime.now();
+    await enableBiometricSession();
+    notifyListeners();
+    return true;
+  }
+
   Future<void> setDecoyPin(String pin) async {
     if (pin.length < 4) throw ArgumentError('PIN must be at least 4 digits');
     final salt = _randomSalt();

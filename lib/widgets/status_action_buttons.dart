@@ -102,7 +102,7 @@ class StatusActionButtons extends StatelessWidget {
     if (item.isVaulted) {
       list.add(_ActionDef(
         icon: Icons.lock_open_outlined,
-        tooltip: 'Restore from vault',
+        tooltip: item.canRestoreToOriginal ? 'Restore to original folder' : 'Restore from vault',
         onTap: () => runner.restoreFromVault(item),
       ));
     } else {

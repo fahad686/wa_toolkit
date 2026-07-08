@@ -9,6 +9,8 @@ import '../services/share_service.dart';
 import '../services/status_actions_runner.dart';
 import '../services/vault_note_service.dart';
 import '../services/vault_service.dart';
+import '../services/vault_local_import_service.dart';
+import '../widgets/animated_loading_overlay.dart';
 import '../widgets/status_grid.dart';
 import 'status_viewer_screen.dart';
 
@@ -33,6 +35,8 @@ class VaultTab extends StatefulWidget {
 }
 
 class _VaultTabState extends State<VaultTab> {
+  static const _localImport = VaultLocalImportService();
+
   List<StatusItem> _items = [];
   List<VaultNote> _noteItems = [];
   bool _checking = true;
@@ -115,6 +119,7 @@ class _VaultTabState extends State<VaultTab> {
             return n.title.toLowerCase().contains(q) || n.body.toLowerCase().contains(q);
           }).toList();
     await widget.cache.encryptLegacyVaultFiles();
+    await widget.cache.ensureVaultThumbnails();
     if (mounted) {
       setState(() {
         _items = filtered;
@@ -152,19 +157,26 @@ class _VaultTabState extends State<VaultTab> {
     ).then((_) => _refresh());
   }
 
-  Future<void> _setupPin() async {
-    final pin = await _pinSetupDialog();
-    if (pin == null) return;
-    await widget.vault.setPin(pin);
-    widget.vault.lock();
-    setState(() {
-      _hasPin = true;
-      _unlocked = false;
-    });
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vault PIN created — files are now encrypted')),
-      );
+  Future<bool> _setupPin(String pin) async {
+    try {
+      final ok = await widget.vault.setupInitialPin(pin);
+      if (!ok) return false;
+      setState(() {
+        _hasPin = true;
+        _unlocked = true;
+      });
+      await _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vault PIN created — your files are now encrypted')),
+        );
+      }
+      return true;
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+      return false;
     }
   }
 
@@ -185,40 +197,43 @@ class _VaultTabState extends State<VaultTab> {
     return true;
   }
 
+  Future<void> _importLocal() async {
+    final paths = await _localImport.pickLocalPaths();
+    if (paths == null || paths.isEmpty || !mounted) return;
+
+    try {
+      final count = await AnimatedLoadingOverlay.run(
+        context,
+        message: 'Hiding files in vault…',
+        subtitle: '${paths.length} selected',
+        icon: Icons.folder_off_outlined,
+        task: () => _localImport.importPaths(cache: widget.cache, paths: paths),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              count == 1
+                  ? 'File hidden in vault'
+                  : '$count files hidden in vault',
+            ),
+          ),
+        );
+      }
+      await _refresh();
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
+  }
+
   Future<void> _unlockBio() async {
     final ok = await widget.vault.unlockWithBiometric();
     if (ok) {
       setState(() => _unlocked = true);
       await _refresh();
     }
-  }
-
-  Future<String?> _pinSetupDialog() async {
-    final c1 = TextEditingController();
-    final c2 = TextEditingController();
-    return showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Create vault PIN'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: c1, obscureText: true, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'PIN (4–6 digits)')),
-            TextField(controller: c2, obscureText: true, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Confirm PIN')),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(
-            onPressed: () {
-              if (c1.text.length < 4 || c1.text != c2.text) return;
-              Navigator.pop(ctx, c1.text);
-            },
-            child: const Text('Create'),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -341,6 +356,11 @@ class _VaultTabState extends State<VaultTab> {
               label: Text(_selectMode ? 'Cancel' : 'Select'),
             ),
             TextButton.icon(onPressed: _addNote, icon: const Icon(Icons.note_add_outlined), label: const Text('Note')),
+            TextButton.icon(
+              onPressed: _importLocal,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Import'),
+            ),
             if (_selectMode) ...[
               TextButton(onPressed: _bulkRestore, child: const Text('Restore')),
               TextButton(onPressed: _bulkDelete, child: const Text('Delete')),
@@ -356,6 +376,7 @@ class _VaultTabState extends State<VaultTab> {
                         context,
                         MaterialPageRoute(builder: (_) => const MediaDownloaderShell()),
                       ),
+                      onImportLocal: _importLocal,
                       onAddNote: _addNote,
                     )
                   : Column(
@@ -382,6 +403,7 @@ class _VaultTabState extends State<VaultTab> {
                               onTap: _openViewer,
                               actionsRunner: _actionsRunner(),
                               gallery: widget.gallery,
+                              cache: widget.cache,
                               selectionMode: _selectMode,
                               selectedIds: _selectedIds,
                               onSelectionToggle: (item) => setState(() {
@@ -433,14 +455,23 @@ class _VaultTabState extends State<VaultTab> {
   }
 
   Future<void> _bulkRestore() async {
+    var restored = 0;
     for (final id in _selectedIds) {
       final item = widget.cache.getById(id);
-      if (item != null) await widget.cache.restoreFromVault(item);
+      if (item != null) {
+        await widget.cache.restoreFromVault(item);
+        restored++;
+      }
     }
     setState(() {
       _selectMode = false;
       _selectedIds.clear();
     });
+    if (mounted && restored > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Restored $restored item(s) to original location')),
+      );
+    }
     _refresh();
   }
 
@@ -478,6 +509,7 @@ class _FilterBar extends StatelessWidget {
       VaultMediaFilter.audio: 'Music',
       VaultMediaFilter.favorites: 'Favorite',
       VaultMediaFilter.downloads: 'Downloads',
+      VaultMediaFilter.local: 'Device',
       VaultMediaFilter.files: 'Files',
     };
     return SizedBox(
@@ -502,9 +534,14 @@ class _FilterBar extends StatelessWidget {
 
 class _EmptyVault extends StatelessWidget {
   final VoidCallback onImportDownloads;
+  final VoidCallback onImportLocal;
   final VoidCallback onAddNote;
 
-  const _EmptyVault({required this.onImportDownloads, required this.onAddNote});
+  const _EmptyVault({
+    required this.onImportDownloads,
+    required this.onImportLocal,
+    required this.onAddNote,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -519,11 +556,17 @@ class _EmptyVault extends StatelessWidget {
             const Text('Vault is empty', style: TextStyle(fontSize: 18)),
             const SizedBox(height: 8),
             const Text(
-              'Move statuses here, save downloads, or add private notes.',
+              'Move statuses here, import from your device, save downloads, or add private notes.',
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),
-            FilledButton.icon(onPressed: onImportDownloads, icon: const Icon(Icons.download_outlined), label: const Text('Import from Downloads')),
+            FilledButton.icon(
+              onPressed: onImportLocal,
+              icon: const Icon(Icons.photo_library_outlined),
+              label: const Text('Import from device'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(onPressed: onImportDownloads, icon: const Icon(Icons.download_outlined), label: const Text('Import from Downloads')),
             const SizedBox(height: 8),
             OutlinedButton.icon(onPressed: onAddNote, icon: const Icon(Icons.note_add_outlined), label: const Text('Add private note')),
           ],

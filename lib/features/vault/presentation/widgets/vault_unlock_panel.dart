@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 class VaultUnlockPanel extends StatefulWidget {
   final bool hasPin;
   final bool canUseBiometric;
   final bool biometricEnabled;
   final Duration? lockoutRemaining;
-  final Future<void> Function() onSetupPin;
+  final Future<bool> Function(String pin) onSetupPin;
   final Future<bool> Function(String pin) onUnlockPin;
   final Future<void> Function() onUnlockBiometric;
   final VaultLockScreenStats? stats;
@@ -36,15 +35,30 @@ class VaultLockScreenStats {
 }
 
 class _VaultUnlockPanelState extends State<VaultUnlockPanel> {
+  static const _pinLength = 4;
+
   final _pin = <String>[];
   bool _busy = false;
   String? _error;
+  String? _setupDraft;
+  bool _confirmSetup = false;
 
   @override
   void initState() {
     super.initState();
     if (widget.hasPin && widget.biometricEnabled && widget.canUseBiometric) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _tryBio());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant VaultUnlockPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!oldWidget.hasPin && widget.hasPin) {
+      _setupDraft = null;
+      _confirmSetup = false;
+      _pin.clear();
+      _error = null;
     }
   }
 
@@ -60,84 +74,109 @@ class _VaultUnlockPanelState extends State<VaultUnlockPanel> {
 
   void _tapDigit(String d) {
     if (_busy || widget.lockoutRemaining != null) return;
-    if (_pin.length >= 6) return;
+    if (_pin.length >= _pinLength) return;
     setState(() {
       _pin.add(d);
       _error = null;
     });
-    if (_pin.length >= 4) _submit();
+    if (_pin.length == _pinLength) _submit();
   }
 
   void _backspace() {
-    if (_pin.isEmpty) return;
+    if (_pin.isEmpty || _busy) return;
     setState(() => _pin.removeLast());
   }
 
   Future<void> _submit() async {
-    if (_pin.length < 4) return;
+    if (_pin.length != _pinLength) return;
+    final entered = _pin.join();
+
     setState(() {
       _busy = true;
       _error = null;
     });
-    final ok = await widget.onUnlockPin(_pin.join());
+
+    bool ok;
+    if (!widget.hasPin) {
+      if (!_confirmSetup) {
+        setState(() {
+          _busy = false;
+          _setupDraft = entered;
+          _confirmSetup = true;
+          _pin.clear();
+        });
+        return;
+      }
+
+      if (entered != _setupDraft) {
+        setState(() {
+          _busy = false;
+          _error = 'PINs do not match. Start again.';
+          _setupDraft = null;
+          _confirmSetup = false;
+          _pin.clear();
+        });
+        return;
+      }
+
+      ok = await widget.onSetupPin(entered);
+    } else {
+      ok = await widget.onUnlockPin(entered);
+    }
+
     if (!mounted) return;
     setState(() {
       _busy = false;
       if (!ok) {
-        _error = 'Wrong PIN';
+        _error = widget.hasPin ? 'Wrong PIN' : 'Could not create PIN. Try again.';
         _pin.clear();
+        if (!widget.hasPin) {
+          _setupDraft = null;
+          _confirmSetup = false;
+        }
       }
     });
+  }
+
+  String get _title {
+    if (!widget.hasPin) {
+      return _confirmSetup ? 'Confirm your PIN' : 'Create vault PIN';
+    }
+    return 'Vault locked';
+  }
+
+  String get _subtitle {
+    if (!widget.hasPin) {
+      return _confirmSetup
+          ? 'Enter the same 4-digit PIN again'
+          : 'Choose a 4-digit PIN to protect your vault';
+    }
+    return 'Enter your 4-digit PIN';
   }
 
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-
-    if (!widget.hasPin) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.shield_outlined, size: 72, color: cs.primary),
-              const SizedBox(height: 16),
-              Text(
-                'Secure Vault',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 8),
-              const Text(
-                'AES-encrypted storage with PIN, fingerprint, decoy mode, private notes, and folders.',
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 24),
-              FilledButton.icon(
-                onPressed: _busy ? null : () async {
-                  setState(() => _busy = true);
-                  await widget.onSetupPin();
-                  if (mounted) setState(() => _busy = false);
-                },
-                icon: const Icon(Icons.pin_outlined),
-                label: const Text('Set up vault PIN'),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
     final lockout = widget.lockoutRemaining;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         children: [
-          Icon(Icons.lock_rounded, size: 56, color: cs.primary),
+          Icon(
+            widget.hasPin ? Icons.lock_rounded : Icons.shield_outlined,
+            size: 56,
+            color: cs.primary,
+          ),
           const SizedBox(height: 12),
-          const Text('Vault locked', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
-          if (widget.stats != null) ...[
+          Text(_title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text(
+            _subtitle,
+            textAlign: TextAlign.center,
+            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 14),
+          ),
+          if (widget.hasPin && widget.stats != null) ...[
             const SizedBox(height: 8),
             Text(
               '${widget.stats!.items} items · ${widget.stats!.storageLabel} · ${widget.stats!.folders} folders',
@@ -155,11 +194,11 @@ class _VaultUnlockPanelState extends State<VaultUnlockPanel> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(
-              6,
+              _pinLength,
               (i) => Container(
-                width: 12,
-                height: 12,
-                margin: const EdgeInsets.symmetric(horizontal: 6),
+                width: 14,
+                height: 14,
+                margin: const EdgeInsets.symmetric(horizontal: 8),
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: i < _pin.length ? cs.primary : cs.surfaceContainerHighest,
@@ -173,7 +212,7 @@ class _VaultUnlockPanelState extends State<VaultUnlockPanel> {
             Text(_error!, style: TextStyle(color: Colors.red.shade700)),
           ],
           const SizedBox(height: 16),
-          if (widget.biometricEnabled && widget.canUseBiometric)
+          if (widget.hasPin && widget.biometricEnabled && widget.canUseBiometric)
             IconButton(
               iconSize: 48,
               onPressed: _busy || lockout != null ? null : _tryBio,
@@ -184,10 +223,11 @@ class _VaultUnlockPanelState extends State<VaultUnlockPanel> {
             onBackspace: _backspace,
             disabled: _busy || lockout != null,
           ),
-          if (_busy) const Padding(
-            padding: EdgeInsets.only(top: 16),
-            child: CircularProgressIndicator(),
-          ),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.only(top: 16),
+              child: CircularProgressIndicator(),
+            ),
         ],
       ),
     );

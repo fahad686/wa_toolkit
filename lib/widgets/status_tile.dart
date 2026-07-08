@@ -2,7 +2,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/status_item.dart';
 import '../services/gallery_service.dart';
+import '../services/local_cache_service.dart';
 import '../services/status_actions_runner.dart';
+import '../services/vault_crypto_service.dart';
+import '../features/vault/presentation/widgets/vault_media_thumbnail.dart';
 import '../utils/format_utils.dart';
 import 'status_action_buttons.dart';
 
@@ -11,6 +14,7 @@ class StatusTile extends StatelessWidget {
   final VoidCallback onTap;
   final StatusActionsRunner? actionsRunner;
   final GalleryService? gallery;
+  final LocalCacheService? cache;
 
   const StatusTile({
     super.key,
@@ -18,6 +22,7 @@ class StatusTile extends StatelessWidget {
     required this.onTap,
     this.actionsRunner,
     this.gallery,
+    this.cache,
   });
 
   @override
@@ -35,7 +40,7 @@ class StatusTile extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _Thumbnail(item: item, fileExists: fileExists),
+                  _Thumbnail(item: item, fileExists: fileExists, cache: cache),
                   if (item.deletedFromWhatsApp)
                     Positioned(
                       top: 6,
@@ -103,11 +108,16 @@ class StatusTile extends StatelessWidget {
 class _Thumbnail extends StatelessWidget {
   final StatusItem item;
   final bool fileExists;
+  final LocalCacheService? cache;
 
-  const _Thumbnail({required this.item, required this.fileExists});
+  const _Thumbnail({required this.item, required this.fileExists, this.cache});
 
   @override
   Widget build(BuildContext context) {
+    if (item.isVaulted && cache != null) {
+      return VaultMediaThumbnail(item: item, cache: cache!);
+    }
+
     if (!fileExists || item.isMissing) {
       return Container(
         color: Colors.grey.shade300,
@@ -124,6 +134,17 @@ class _Thumbnail extends StatelessWidget {
     }
 
     if (item.mediaType == StatusMediaType.image) {
+      final thumb = item.thumbnailPath;
+      if (thumb != null && File(thumb).existsSync()) {
+        return Image.file(File(thumb), fit: BoxFit.cover);
+      }
+      if (VaultCryptoService.isEncryptedPath(item.displayPath)) {
+        return Container(
+          color: Colors.grey.shade300,
+          alignment: Alignment.center,
+          child: const Icon(Icons.lock_outline, size: 32),
+        );
+      }
       return Image.file(File(item.displayPath), fit: BoxFit.cover);
     }
 

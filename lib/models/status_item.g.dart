@@ -33,13 +33,14 @@ class StatusItemAdapter extends TypeAdapter<StatusItem> {
       isFavorite: fields[17] as bool? ?? false,
       collectionTags: (fields[18] as List?)?.cast<String>() ?? const [],
       vaultFolder: fields[19] as String?,
+      originalLocationPath: fields[20] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, StatusItem obj) {
     writer
-      ..writeByte(20)
+      ..writeByte(21)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -79,7 +80,9 @@ class StatusItemAdapter extends TypeAdapter<StatusItem> {
       ..writeByte(18)
       ..write(obj.collectionTags)
       ..writeByte(19)
-      ..write(obj.vaultFolder);
+      ..write(obj.vaultFolder)
+      ..writeByte(20)
+      ..write(obj.originalLocationPath);
   }
 
   @override

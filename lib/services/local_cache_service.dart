@@ -3,6 +3,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../models/status_item.dart';
+import 'thumbnail_service.dart';
 import 'vault_crypto_service.dart';
 import 'whatsapp_paths.dart';
 
@@ -10,7 +11,7 @@ enum StatusFilter { all, images, videos, audio, saved, vaulted, missing, favorit
 
 enum StatusDateFilter { all, today, last7Days }
 
-enum VaultMediaFilter { all, images, videos, audio, favorites, downloads, files }
+enum VaultMediaFilter { all, images, videos, audio, favorites, downloads, local, files }
 
 class VaultStats {
   final int itemCount;
@@ -29,7 +30,6 @@ class LocalCacheService {
   VaultCryptoService? vaultCrypto;
 
   Future<void> init() async {
-    await Hive.initFlutter();
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapter(StatusItemAdapter());
     }
@@ -138,6 +138,7 @@ class LocalCacheService {
         result.where((i) => i.mediaType == StatusMediaType.audio).toList(),
       VaultMediaFilter.favorites => result.where((i) => i.isFavorite).toList(),
       VaultMediaFilter.downloads => result.where((i) => i.id.startsWith('dl_')).toList(),
+      VaultMediaFilter.local => result.where((i) => i.isLocalImport).toList(),
       VaultMediaFilter.files => result
           .where((i) =>
               i.id.startsWith('dl_') &&
@@ -153,7 +154,8 @@ class LocalCacheService {
               i.contactLabel.toLowerCase().contains(q) ||
               (i.originalFileName?.toLowerCase().contains(q) ?? false) ||
               (i.vaultFolder?.toLowerCase().contains(q) ?? false) ||
-              (i.sourceHint?.toLowerCase().contains(q) ?? false))
+              (i.sourceHint?.toLowerCase().contains(q) ?? false) ||
+              (i.originalLocationPath?.toLowerCase().contains(q) ?? false))
           .toList();
     }
     return result;
@@ -204,14 +206,32 @@ class LocalCacheService {
     final source = File(vaultPath);
     if (!await source.exists()) throw StateError('Vault file is missing.');
 
+    var workingPath = vaultPath;
+    final usedTempDecrypt = VaultCryptoService.isEncryptedPath(vaultPath) && vaultCrypto?.isUnlocked == true;
+    if (usedTempDecrypt) {
+      workingPath = await vaultCrypto!.readablePath(vaultPath, cacheId: '${item.id}_restore');
+    }
+
+    final originalPath = item.originalLocationPath;
+    if (originalPath != null && originalPath.isNotEmpty) {
+      final destFile = File(originalPath);
+      final parent = destFile.parent;
+      if (!await parent.exists()) await parent.create(recursive: true);
+      if (await destFile.exists()) await destFile.delete();
+      await File(workingPath).copy(originalPath);
+
+      await _deleteFileIfExists(vaultPath);
+      if (usedTempDecrypt && workingPath != vaultPath) {
+        await _deleteFileIfExists(workingPath);
+      }
+      if (item.thumbnailPath != null) await _deleteFileIfExists(item.thumbnailPath!);
+      await _box.delete(item.id);
+      return item;
+    }
+
     final docsDir = await getApplicationDocumentsDirectory();
     final savedDir = Directory(p.join(docsDir.path, 'saved_statuses'));
     if (!await savedDir.exists()) await savedDir.create(recursive: true);
-
-    var workingPath = vaultPath;
-    if (VaultCryptoService.isEncryptedPath(vaultPath) && vaultCrypto?.isUnlocked == true) {
-      workingPath = await vaultCrypto!.readablePath(vaultPath, cacheId: '${item.id}_restore');
-    }
 
     final ext = p.extension(workingPath.replaceAll('.enc', ''));
     final destPath = p.join(savedDir.path, '${item.id}$ext');
@@ -233,15 +253,46 @@ class LocalCacheService {
     for (final item in getVaulted()) {
       final path = item.vaultedFilePath;
       if (path == null || VaultCryptoService.isEncryptedPath(path)) continue;
+
+      final encPath = '$path${VaultCryptoService.encryptedExtension}';
+      final encFile = File(encPath);
+      if (await encFile.exists()) {
+        item.vaultedFilePath = encPath;
+        item.cachedFilePath = encPath;
+        await item.save();
+        continue;
+      }
+
       final file = File(path);
       if (!await file.exists()) continue;
-      final encPath = await vaultCrypto!.encryptFile(path);
-      item.vaultedFilePath = encPath;
-      item.cachedFilePath = encPath;
+
+      if (item.thumbnailPath == null) {
+        item.thumbnailPath = await _createThumbnailForVault(item.id, path, item.mediaType);
+        await item.save();
+      }
+
+      final encrypted = await vaultCrypto!.encryptFile(path);
+      item.vaultedFilePath = encrypted;
+      item.cachedFilePath = encrypted;
       await item.save();
       count++;
     }
     return count;
+  }
+
+  /// Backfills thumbnails for encrypted vault items imported before thumbnail support.
+  Future<void> ensureVaultThumbnails() async {
+    if (vaultCrypto?.isUnlocked != true) return;
+    for (final item in getVaulted()) {
+      final thumb = item.thumbnailPath;
+      if (thumb != null && File(thumb).existsSync()) continue;
+      if (item.mediaType == StatusMediaType.audio) continue;
+      try {
+        final plain = await readableMediaPath(item);
+        item.thumbnailPath = await _createThumbnailForVault(item.id, plain, item.mediaType);
+        await item.save();
+      } catch (_) {}
+    }
   }
 
   Future<String> _finalizeVaultFile(String plainPath) async {
@@ -395,6 +446,45 @@ class LocalCacheService {
     return item;
   }
 
+  /// Imports a file from device storage, moves it into the vault, and removes it from the original folder.
+  Future<StatusItem> importLocalFileToVault({
+    required String sourcePath,
+    String? folder,
+  }) async {
+    final source = File(sourcePath);
+    if (!await source.exists()) throw StateError('File not found on device.');
+
+    final originalLocation = source.absolute.path;
+    final vaultDir = await _vaultDirectory();
+    final id = 'local_${DateTime.now().millisecondsSinceEpoch}_${originalLocation.hashCode.abs()}';
+    final ext = p.extension(sourcePath);
+    final destPath = p.join(vaultDir.path, '$id$ext');
+
+    await _moveIntoVault(source, destPath);
+    final mediaType = _mediaTypeForPath(sourcePath);
+    final thumbPath = await _createThumbnailForVault(id, destPath, mediaType);
+    final finalPath = await _finalizeVaultFile(destPath);
+
+    final now = DateTime.now();
+    final item = StatusItem(
+      id: id,
+      cachedFilePath: finalPath,
+      mediaTypeIndex: mediaType.index,
+      discoveredAt: now,
+      expiresAt: now.add(const Duration(days: 36500)),
+      isVaulted: true,
+      vaultedFilePath: finalPath,
+      originalFileName: p.basename(originalLocation),
+      originalSizeBytes: await File(finalPath).exists() ? await File(finalPath).length() : 0,
+      sourceHint: p.basename(originalLocation),
+      vaultFolder: folder?.trim().isEmpty == true ? null : folder?.trim(),
+      originalLocationPath: originalLocation,
+      thumbnailPath: thumbPath,
+    );
+    await putItem(item);
+    return item;
+  }
+
   Future<StatusItem> moveToVault(StatusItem item, {String? folder}) async {
     final vaultDir = await _vaultDirectory();
     final source = File(item.displayPath);
@@ -408,6 +498,9 @@ class LocalCacheService {
       }
     }
 
+    if (item.thumbnailPath == null) {
+      item.thumbnailPath = await _createThumbnailForVault(item.id, destPath, item.mediaType);
+    }
     final finalPath = await _finalizeVaultFile(destPath);
 
     item.isVaulted = true;
@@ -441,11 +534,66 @@ class LocalCacheService {
     await item.save();
   }
 
+  Future<Directory> _thumbnailDirectory() async {
+    final supportDir = await getApplicationSupportDirectory();
+    final dir = Directory(p.join(supportDir.path, 'vault_thumbs'));
+    if (!await dir.exists()) await dir.create(recursive: true);
+    return dir;
+  }
+
+  Future<String?> _createThumbnailForVault(
+    String itemId,
+    String plainPath,
+    StatusMediaType mediaType,
+  ) async {
+    final source = File(plainPath);
+    if (!await source.exists()) return null;
+
+    final thumbDir = await _thumbnailDirectory();
+    switch (mediaType) {
+      case StatusMediaType.image:
+        final thumbPath = p.join(thumbDir.path, '$itemId.jpg');
+        await source.copy(thumbPath);
+        return thumbPath;
+      case StatusMediaType.video:
+        return ThumbnailService().generateForVideo(plainPath, thumbDir.path);
+      case StatusMediaType.audio:
+        return null;
+    }
+  }
+
   Future<Directory> _vaultDirectory() async {
     final supportDir = await getApplicationSupportDirectory();
     final vaultDir = Directory(p.join(supportDir.path, 'secure_vault'));
     if (!await vaultDir.exists()) await vaultDir.create(recursive: true);
     return vaultDir;
+  }
+
+  Future<void> _moveIntoVault(File source, String destPath) async {
+    try {
+      await source.rename(destPath);
+    } catch (_) {
+      await source.copy(destPath);
+      try {
+        await source.delete();
+      } catch (_) {
+        // Vault copy succeeded; original may remain if the OS blocks deletion.
+      }
+    }
+  }
+
+  StatusMediaType _mediaTypeForPath(String path) {
+    final ext = p.extension(path).toLowerCase();
+    if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.heic', '.heif'].contains(ext)) {
+      return StatusMediaType.image;
+    }
+    if (['.mp4', '.mkv', '.mov', '.avi', '.webm', '.3gp', '.m4v'].contains(ext)) {
+      return StatusMediaType.video;
+    }
+    if (['.mp3', '.m4a', '.wav', '.ogg', '.opus', '.aac', '.flac'].contains(ext)) {
+      return StatusMediaType.audio;
+    }
+    return StatusMediaType.image;
   }
 
   Future<void> _deleteFileIfExists(String path) async {
