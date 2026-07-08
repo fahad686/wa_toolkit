@@ -21,6 +21,7 @@ class VaultShell extends StatelessWidget {
         gallery: s.gallery,
         share: s.share,
         vault: s.vault,
+        notes: s.vaultNotes,
       ),
     );
   }

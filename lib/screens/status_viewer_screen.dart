@@ -8,6 +8,7 @@ import '../services/gallery_service.dart';
 import '../services/local_cache_service.dart';
 import '../services/share_service.dart';
 import '../services/status_actions_runner.dart';
+import '../services/vault_service.dart';
 import '../utils/format_utils.dart';
 import '../widgets/status_action_buttons.dart';
 
@@ -19,6 +20,7 @@ class StatusViewerScreen extends StatefulWidget {
   final GalleryService gallery;
   final ShareService share;
   final FileRepairService? repair;
+  final VaultService? vault;
   final VoidCallback? onChanged;
 
   const StatusViewerScreen({
@@ -30,6 +32,7 @@ class StatusViewerScreen extends StatefulWidget {
     required this.gallery,
     required this.share,
     this.repair,
+    this.vault,
     this.onChanged,
   });
 
@@ -43,9 +46,21 @@ class _StatusViewerScreenState extends State<StatusViewerScreen> {
   final Map<int, VideoPlayerController?> _videoControllers = {};
   final Map<int, bool> _videoReady = {};
 
+  final Map<String, String> _mediaPaths = {};
+
   List<StatusItem> get _allItems => widget.items ?? [widget.item];
 
   StatusItem get _item => _allItems[_currentIndex];
+
+  Future<String> _pathFor(StatusItem item) async {
+    if (_mediaPaths.containsKey(item.id)) return _mediaPaths[item.id]!;
+    if (item.isVaulted && widget.vault != null) {
+      final path = await widget.vault!.readablePath(item.displayPath, item.id);
+      _mediaPaths[item.id] = path;
+      return path;
+    }
+    return item.displayPath;
+  }
 
   @override
   void initState() {
@@ -60,7 +75,8 @@ class _StatusViewerScreenState extends State<StatusViewerScreen> {
     if (item.mediaType != StatusMediaType.video) return;
     if (_videoControllers[index] != null) return;
 
-    final controller = VideoPlayerController.file(File(item.displayPath));
+    final path = await _pathFor(item);
+    final controller = VideoPlayerController.file(File(path));
     await controller.initialize();
     controller.setLooping(true);
     await controller.play();
@@ -106,14 +122,25 @@ class _StatusViewerScreenState extends State<StatusViewerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final file = File(_item.displayPath);
-    if (!file.existsSync()) {
-      return Scaffold(
-        appBar: AppBar(),
-        body: const Center(child: Text('File is missing. Try repairing from the status list.')),
-      );
-    }
+    return FutureBuilder<String>(
+      future: _pathFor(_item),
+      builder: (context, snap) {
+        final path = snap.data;
+        if (path == null) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        if (!File(path).existsSync()) {
+          return Scaffold(
+            appBar: AppBar(),
+            body: const Center(child: Text('File is missing. Try repairing from the status list.')),
+          );
+        }
+        return _buildScaffold(path);
+      },
+    );
+  }
 
+  Widget _buildScaffold(String currentPath) {
     return Scaffold(
       backgroundColor: Colors.black,
       extendBodyBehindAppBar: true,
@@ -131,11 +158,19 @@ class _StatusViewerScreenState extends State<StatusViewerScreen> {
             onPageChanged: _onPageChanged,
             itemBuilder: (context, index) {
               final pageItem = _allItems[index];
-              return Column(
-                children: [
-                  Expanded(child: _buildBody(pageItem, index)),
-                  _InfoBar(item: pageItem),
-                ],
+              return FutureBuilder<String>(
+                future: _pathFor(pageItem),
+                builder: (context, snap) {
+                  if (!snap.hasData) {
+                    return const Center(child: CircularProgressIndicator(color: Colors.white));
+                  }
+                  return Column(
+                    children: [
+                      Expanded(child: _buildBody(pageItem, index, snap.data!)),
+                      _InfoBar(item: pageItem),
+                    ],
+                  );
+                },
               );
             },
           ),
@@ -174,10 +209,10 @@ class _StatusViewerScreenState extends State<StatusViewerScreen> {
     );
   }
 
-  Widget _buildBody(StatusItem item, int index) {
+  Widget _buildBody(StatusItem item, int index, String path) {
     return switch (item.mediaType) {
       StatusMediaType.image => PhotoView(
-          imageProvider: FileImage(File(item.displayPath)),
+          imageProvider: FileImage(File(path)),
           minScale: PhotoViewComputedScale.contained,
           maxScale: PhotoViewComputedScale.covered * 3,
         ),

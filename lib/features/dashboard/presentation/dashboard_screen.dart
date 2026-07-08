@@ -91,11 +91,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
             style: TextStyle(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 2),
-          Text(
-            'mef tech',
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: cs.onSurfaceVariant.withValues(alpha: 0.7),
-                ),
+          GestureDetector(
+            onLongPress: () => _openFeature(const VaultShell()),
+            child: Text(
+              'mef tech',
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.7),
+                  ),
+            ),
           ),
           const SizedBox(height: 16),
           _StatsRow(stats: stats),
@@ -129,14 +132,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
             onTap: () => _openFeature(const MediaDownloaderShell()),
           ),
           const SizedBox(height: 12),
-          FeatureCard(
-            icon: Icons.lock_outline,
-            color: Colors.deepPurple,
-            title: 'Secure Vault',
-            subtitle: 'PIN-protected storage for sensitive statuses and media.',
-            badge: stats.vaultedStatuses > 0 ? '${stats.vaultedStatuses} items' : null,
-            onTap: () => _openFeature(const VaultShell()),
-          ),
+          if (!s.prefs.vaultHideDashboard)
+            FeatureCard(
+              icon: Icons.lock_outline,
+              color: Colors.deepPurple,
+              title: 'Secure Vault',
+              subtitle: 'AES-encrypted PIN vault with folders, notes, decoy mode, and auto-lock.',
+              badge: stats.vaultedStatuses > 0 ? '${stats.vaultedStatuses} items' : null,
+              onTap: () => _openFeature(const VaultShell()),
+            ),
+          if (!s.prefs.vaultHideDashboard) const SizedBox(height: 12),
         ],
       ),
     );

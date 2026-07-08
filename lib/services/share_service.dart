@@ -5,8 +5,8 @@ import '../models/status_item.dart';
 
 /// Shares status media via the system share sheet.
 class ShareService {
-  Future<void> shareStatus(StatusItem item) async {
-    final file = File(item.displayPath);
+  Future<void> shareStatus(StatusItem item, {String? filePath}) async {
+    final file = File(filePath ?? item.displayPath);
     if (!await file.exists()) {
       throw StateError('File is missing — try "Repair missing files" first.');
     }

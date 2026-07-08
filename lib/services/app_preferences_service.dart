@@ -15,6 +15,13 @@ class AppPreferencesService {
   static const _downloadAlertsEnabled = 'download_alerts_enabled';
   static const _favoriteDownloadIds = 'favorite_download_ids';
   static const _downloadPlaylists = 'download_playlists';
+  static const _vaultAutoLockMinutes = 'vault_auto_lock_minutes';
+  static const _vaultHideDashboard = 'vault_hide_dashboard';
+  static const _autoVaultEnabled = 'auto_vault_enabled';
+  static const _autoVaultVideosOnly = 'auto_vault_videos_only';
+  static const _autoVaultContacts = 'auto_vault_contacts';
+  static const _autoVaultFolder = 'auto_vault_folder';
+  static const _vaultBreakInAlerts = 'vault_break_in_alerts';
 
   final Box _box;
 
@@ -142,4 +149,36 @@ class AppPreferencesService {
     map.putIfAbsent(name, () => []);
     await _box.put(_downloadPlaylists, map);
   }
+
+  int get vaultAutoLockMinutes => _box.get(_vaultAutoLockMinutes, defaultValue: 2) as int;
+  Future<void> setVaultAutoLockMinutes(int v) => _box.put(_vaultAutoLockMinutes, v);
+
+  bool get vaultHideDashboard => _box.get(_vaultHideDashboard, defaultValue: false) as bool;
+  Future<void> setVaultHideDashboard(bool v) => _box.put(_vaultHideDashboard, v);
+
+  bool get autoVaultEnabled => _box.get(_autoVaultEnabled, defaultValue: false) as bool;
+  Future<void> setAutoVaultEnabled(bool v) => _box.put(_autoVaultEnabled, v);
+
+  bool get autoVaultVideosOnly => _box.get(_autoVaultVideosOnly, defaultValue: false) as bool;
+  Future<void> setAutoVaultVideosOnly(bool v) => _box.put(_autoVaultVideosOnly, v);
+
+  List<String> get autoVaultContacts {
+    final raw = _box.get(_autoVaultContacts);
+    if (raw is List) return raw.cast<String>();
+    return [];
+  }
+
+  Future<void> setAutoVaultContacts(List<String> contacts) =>
+      _box.put(_autoVaultContacts, contacts);
+
+  String? get autoVaultFolder {
+    final v = _box.get(_autoVaultFolder);
+    return v is String && v.isNotEmpty ? v : null;
+  }
+
+  Future<void> setAutoVaultFolder(String? folder) =>
+      _box.put(_autoVaultFolder, folder ?? '');
+
+  bool get vaultBreakInAlerts => _box.get(_vaultBreakInAlerts, defaultValue: true) as bool;
+  Future<void> setVaultBreakInAlerts(bool v) => _box.put(_vaultBreakInAlerts, v);
 }

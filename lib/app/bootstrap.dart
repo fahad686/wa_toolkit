@@ -16,10 +16,12 @@ import '../services/vault_service.dart';
 import 'theme/theme_notifier.dart';
 import '../services/app_preferences_service.dart';
 import '../services/auto_save_service.dart';
+import '../services/auto_vault_service.dart';
 import '../services/deleted_message_alert_service.dart';
 import '../services/download_notification_service.dart';
 import '../services/global_search_service.dart';
 import '../services/usage_stats_service.dart';
+import '../services/vault_note_service.dart';
 
 /// Global service container — initialized once at app start.
 class AppServices {
@@ -39,6 +41,8 @@ class AppServices {
   final UsageStatsService stats;
   final GlobalSearchService search;
   final AutoSaveService autoSave;
+  final AutoVaultService autoVault;
+  final VaultNoteService vaultNotes;
   final DeletedMessageAlertService deletedAlerts;
   final LinkResolverService linkResolver;
   final DownloadManagerService downloadManager;
@@ -61,6 +65,8 @@ class AppServices {
     required this.stats,
     required this.search,
     required this.autoSave,
+    required this.autoVault,
+    required this.vaultNotes,
     required this.deletedAlerts,
     required this.linkResolver,
     required this.downloadManager,
@@ -70,15 +76,24 @@ class AppServices {
   static late final AppServices I;
 
   static Future<AppServices> init() async {
-    final cache = LocalCacheService();
-    await cache.init();
-
     final settingsBox = await Hive.openBox('settings');
     final theme = ThemeNotifier(settingsBox);
     final prefs = AppPreferencesService(settingsBox);
 
+    final vault = VaultService();
+    await vault.intruder.init(prefs);
+    vault.configure(autoLockMinutes: prefs.vaultAutoLockMinutes);
+
+    final vaultNotes = VaultNoteService();
+    await vaultNotes.init();
+
+    final cache = LocalCacheService();
+    await cache.init();
+    cache.vaultCrypto = vault.crypto;
+
     final thumbnails = ThumbnailService();
     final autoSave = AutoSaveService(prefs: prefs, cache: cache);
+    final autoVault = AutoVaultService(prefs: prefs, cache: cache);
     final scanner = StatusScannerService(cache, thumbnails, autoSave);
     await scanner.restoreAllAccess();
 
@@ -107,7 +122,7 @@ class AppServices {
       downloader: DownloaderService(),
       gallery: GalleryService(),
       share: ShareService(),
-      vault: VaultService(),
+      vault: vault,
       repair: FileRepairService(cache, scanner),
       watch: StatusWatchService(scanner),
       thumbnails: thumbnails,
@@ -116,8 +131,10 @@ class AppServices {
       theme: theme,
       prefs: prefs,
       stats: UsageStatsService(cache: cache, messages: messages, downloads: downloadManager),
-      search: GlobalSearchService(cache: cache, messages: messages),
+      search: GlobalSearchService(cache: cache, messages: messages, vault: vault),
       autoSave: autoSave,
+      autoVault: autoVault,
+      vaultNotes: vaultNotes,
       deletedAlerts: deletedAlerts,
       linkResolver: linkResolver,
       downloadManager: downloadManager,

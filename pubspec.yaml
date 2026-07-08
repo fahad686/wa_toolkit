@@ -26,6 +26,7 @@ dependencies:
   dio: ^5.4.3
   flutter_downloader: ^1.11.6
   crypto: ^3.0.3
+  encrypt: ^5.0.3
 
   # Media actions
   share_plus: ^10.1.4

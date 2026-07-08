@@ -28,12 +28,14 @@ class StatusActionsRunner {
 
   Future<void> saveInApp(StatusItem item) => _run(() async {
         await cache.saveItem(item);
+        await AppServices.I.autoVault.applyAfterSave(item);
         await _maybePromptVault(item);
       }, 'Saved permanently in app');
 
   Future<void> saveToGallery(StatusItem item) => _run(() async {
         if (!item.isSaved && !item.isVaulted) await cache.saveItem(item);
-        await gallery.saveToGallery(item);
+        final path = await cache.readableMediaPath(item);
+        await gallery.saveToGallery(item, filePath: path);
         await _maybePromptVault(item);
       }, 'Saved to gallery');
 
@@ -47,6 +49,11 @@ class StatusActionsRunner {
       folder != null && folder.isNotEmpty ? 'Moved to vault / $folder' : 'Moved to vault',
     );
   }
+
+  Future<void> restoreFromVault(StatusItem item) => _run(
+        () => cache.restoreFromVault(item),
+        'Restored from vault',
+      );
 
   Future<void> toggleFavorite(StatusItem item) async {
     final wasFavorite = item.isFavorite;
@@ -62,10 +69,10 @@ class StatusActionsRunner {
     await _run(() => cache.addCollectionTag(item, tag), 'Added to $tag');
   }
 
-  Future<void> share(StatusItem item) => _run(
-        () => shareService.shareStatus(item),
-        'Shared',
-      );
+  Future<void> share(StatusItem item) => _run(() async {
+        final path = await cache.readableMediaPath(item);
+        await shareService.shareStatus(item, filePath: path);
+      }, 'Shared');
 
   Future<void> repair(StatusItem item) => _run(
         () => repairService!.repairOne(item),

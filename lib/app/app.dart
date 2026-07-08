@@ -11,14 +11,31 @@ class WaToolkitApp extends StatefulWidget {
   State<WaToolkitApp> createState() => _WaToolkitAppState();
 }
 
-class _WaToolkitAppState extends State<WaToolkitApp> {
+class _WaToolkitAppState extends State<WaToolkitApp> with WidgetsBindingObserver {
   final _navigatorKey = GlobalKey<NavigatorState>();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _handleInitialShare();
     AppServices.I.shareLinks.links.listen(_onSharedLink);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+      AppServices.I.vault.lock();
+    }
+    if (state == AppLifecycleState.resumed && AppServices.I.vault.shouldAutoLock()) {
+      AppServices.I.vault.lock();
+    }
   }
 
   Future<void> _handleInitialShare() async {

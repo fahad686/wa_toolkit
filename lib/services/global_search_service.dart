@@ -1,7 +1,8 @@
+import '../models/status_item.dart';
+import '../services/local_cache_service.dart';
+import '../services/vault_service.dart';
 import '../features/deleted_messages/data/models/captured_message.dart';
 import '../features/deleted_messages/data/services/message_store_service.dart';
-import '../models/status_item.dart';
-import 'local_cache_service.dart';
 
 class SearchResult {
   final List<StatusItem> statuses;
@@ -16,8 +17,13 @@ class SearchResult {
 class GlobalSearchService {
   final LocalCacheService cache;
   final MessageStoreService messages;
+  final VaultService vault;
 
-  GlobalSearchService({required this.cache, required this.messages});
+  GlobalSearchService({
+    required this.cache,
+    required this.messages,
+    required this.vault,
+  });
 
   SearchResult search(String query) {
     final q = query.trim().toLowerCase();
@@ -26,6 +32,7 @@ class GlobalSearchService {
     }
 
     final statuses = cache.getAllIncludingMissing().where((item) {
+      if (item.isVaulted && !vault.isUnlocked) return false;
       return item.contactLabel.toLowerCase().contains(q) ||
           (item.originalFileName?.toLowerCase().contains(q) ?? false) ||
           item.collectionTags.any((t) => t.toLowerCase().contains(q)) ||

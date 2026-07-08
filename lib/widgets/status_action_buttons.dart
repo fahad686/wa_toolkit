@@ -99,7 +99,13 @@ class StatusActionButtons extends StatelessWidget {
       ));
     }
 
-    if (!item.isVaulted) {
+    if (item.isVaulted) {
+      list.add(_ActionDef(
+        icon: Icons.lock_open_outlined,
+        tooltip: 'Restore from vault',
+        onTap: () => runner.restoreFromVault(item),
+      ));
+    } else {
       list.add(_ActionDef(
         icon: Icons.lock_outline,
         tooltip: 'Move to secure vault',

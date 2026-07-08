@@ -4,8 +4,8 @@ import '../models/status_item.dart';
 
 /// Saves status media into the device gallery (Pictures / Movies).
 class GalleryService {
-  Future<void> saveToGallery(StatusItem item) async {
-    final file = File(item.displayPath);
+  Future<void> saveToGallery(StatusItem item, {String? filePath}) async {
+    final file = File(filePath ?? item.displayPath);
     if (!await file.exists()) {
       throw StateError('File is missing — try "Repair missing files" first.');
     }

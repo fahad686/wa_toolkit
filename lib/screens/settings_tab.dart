@@ -31,6 +31,11 @@ class _SettingsTabState extends State<SettingsTab> {
   bool _autoSaveVideosOnly = false;
   bool _promptVault = false;
   bool _deletedAlerts = true;
+  bool _vaultHideDashboard = false;
+  bool _autoVault = false;
+  bool _autoVaultVideosOnly = false;
+  bool _vaultBreakInAlerts = true;
+  int _vaultAutoLockMinutes = 2;
 
   @override
   void initState() {
@@ -57,6 +62,11 @@ class _SettingsTabState extends State<SettingsTab> {
       _autoSaveVideosOnly = s.prefs.autoSaveVideosOnly;
       _promptVault = s.prefs.promptVaultAfterSave;
       _deletedAlerts = s.prefs.deletedAlertsEnabled;
+      _vaultHideDashboard = s.prefs.vaultHideDashboard;
+      _autoVault = s.prefs.autoVaultEnabled;
+      _autoVaultVideosOnly = s.prefs.autoVaultVideosOnly;
+      _vaultBreakInAlerts = s.prefs.vaultBreakInAlerts;
+      _vaultAutoLockMinutes = s.prefs.vaultAutoLockMinutes;
     });
   }
 
@@ -105,6 +115,23 @@ class _SettingsTabState extends State<SettingsTab> {
         ],
       ),
     );
+  }
+
+  Future<void> _changePin() async {
+    final oldPin = await _pinDialog('Current PIN');
+    if (oldPin == null) return;
+    final newPin = await _pinDialog('New PIN');
+    if (newPin == null) return;
+    try {
+      await widget.vault.changePin(oldPin, newPin);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vault PIN updated')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$e')));
+      }
+    }
   }
 
   @override
@@ -171,6 +198,63 @@ class _SettingsTabState extends State<SettingsTab> {
         ),
         const Divider(height: 32),
         const Text('Vault', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+        SwitchListTile(
+          title: const Text('Hide vault on dashboard'),
+          subtitle: const Text('Long-press "mef tech" on dashboard to open vault'),
+          value: _vaultHideDashboard,
+          onChanged: (v) async {
+            await prefs.setVaultHideDashboard(v);
+            setState(() => _vaultHideDashboard = v);
+          },
+        ),
+        ListTile(
+          title: const Text('Auto-lock timeout'),
+          subtitle: Text('$_vaultAutoLockMinutes min (0 = lock when app backgrounds)'),
+          trailing: DropdownButton<int>(
+            value: _vaultAutoLockMinutes,
+            items: const [0, 1, 2, 5, 15]
+                .map((m) => DropdownMenuItem(value: m, child: Text('$m min')))
+                .toList(),
+            onChanged: (v) async {
+              if (v == null) return;
+              await prefs.setVaultAutoLockMinutes(v);
+              AppServices.I.vault.configure(autoLockMinutes: v);
+              setState(() => _vaultAutoLockMinutes = v);
+            },
+          ),
+        ),
+        SwitchListTile(
+          title: const Text('Auto-move to vault after save'),
+          value: _autoVault,
+          onChanged: (v) async {
+            await prefs.setAutoVaultEnabled(v);
+            setState(() => _autoVault = v);
+          },
+        ),
+        SwitchListTile(
+          title: const Text('Auto-vault videos only'),
+          value: _autoVaultVideosOnly,
+          onChanged: !_autoVault
+              ? null
+              : (v) async {
+                  await prefs.setAutoVaultVideosOnly(v);
+                  setState(() => _autoVaultVideosOnly = v);
+                },
+        ),
+        SwitchListTile(
+          title: const Text('Break-in alerts'),
+          subtitle: const Text('Notify on failed unlock attempts'),
+          value: _vaultBreakInAlerts,
+          onChanged: (v) async {
+            await prefs.setVaultBreakInAlerts(v);
+            setState(() => _vaultBreakInAlerts = v);
+          },
+        ),
+        ListTile(
+          leading: const Icon(Icons.pin_outlined),
+          title: const Text('Change vault PIN'),
+          onTap: _hasPin ? _changePin : null,
+        ),
         SwitchListTile(
           title: const Text('Unlock with fingerprint'),
           value: _biometric && _canBio,

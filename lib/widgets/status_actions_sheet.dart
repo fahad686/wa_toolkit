@@ -14,6 +14,7 @@ class StatusActionsSheet extends StatelessWidget {
   final StatusActionCallback onSave;
   final StatusActionCallback onSaveToGallery;
   final StatusActionCallback onVault;
+  final StatusActionCallback? onRestore;
   final StatusActionCallback onShare;
   final StatusActionCallback onDelete;
   final StatusActionCallback? onRepair;
@@ -28,6 +29,7 @@ class StatusActionsSheet extends StatelessWidget {
     required this.onSave,
     required this.onSaveToGallery,
     required this.onVault,
+    this.onRestore,
     required this.onShare,
     required this.onDelete,
     this.onRepair,
@@ -43,6 +45,7 @@ class StatusActionsSheet extends StatelessWidget {
     required StatusActionCallback onSave,
     required StatusActionCallback onSaveToGallery,
     required StatusActionCallback onVault,
+    StatusActionCallback? onRestore,
     required StatusActionCallback onShare,
     required StatusActionCallback onDelete,
     StatusActionCallback? onRepair,
@@ -59,6 +62,7 @@ class StatusActionsSheet extends StatelessWidget {
         onSave: onSave,
         onSaveToGallery: onSaveToGallery,
         onVault: onVault,
+        onRestore: onRestore,
         onShare: onShare,
         onDelete: onDelete,
         onRepair: onRepair,
@@ -112,7 +116,13 @@ class StatusActionsSheet extends StatelessWidget {
               title: Text('Save to ${gallery.galleryLabelFor(item)}'),
               onTap: () => _run(context, onSaveToGallery, 'Saved to gallery'),
             ),
-          if (!item.isVaulted)
+          if (item.isVaulted && onRestore != null)
+            ListTile(
+              leading: const Icon(Icons.lock_open_outlined),
+              title: const Text('Restore from vault'),
+              onTap: () => _run(context, onRestore!, 'Restored from vault'),
+            )
+          else if (!item.isVaulted)
             ListTile(
               leading: const Icon(Icons.lock_outline),
               title: const Text('Move to secure vault'),
